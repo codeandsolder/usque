@@ -259,6 +259,7 @@ var portFwCmd = &cobra.Command{
 			ReconnectDelay:    reconnectDelay,
 			AlwaysReconnect:   alwaysReconnect,
 			UseHTTP2:          useHTTP2,
+			LocalAddr:         nil,
 			OnConnect:         onConnect,
 			OnDisconnect:      onDisconnect,
 			HookEnv:           hookEnv,

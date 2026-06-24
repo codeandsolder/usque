@@ -170,6 +170,11 @@ type MaintainTunnelConfig struct {
 	ReconnectDelay    time.Duration
 	AlwaysReconnect   bool
 	UseHTTP2          bool
+	// LocalAddr optionally pins the source address for the MASQUERADE outbound
+	// socket. When set, the kernel uses this IP as the source for the QUIC
+	// (HTTP/3) or TCP (HTTP/2) connection to the CF endpoint. nil = let the
+	// kernel pick (the default).
+	LocalAddr *net.UDPAddr
 	// OnConnect is a path to an executable run after every successful tunnel
 	// connect. It is exec'd directly (no shell, no args) and runs fire-and-forget.
 	OnConnect string
@@ -261,6 +266,7 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 			internal.ConnectURI,
 			cfg.Endpoint,
 			cfg.UseHTTP2,
+			cfg.LocalAddr,
 		)
 		if err != nil {
 			log.Printf("Failed to connect tunnel: %v", err)
