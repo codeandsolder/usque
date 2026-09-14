@@ -226,13 +226,15 @@ func shouldReconnectOnOpenStreamError(ctx context.Context, err error) bool {
 }
 
 func (p *L4Proxy) getOrCreateClientConn(ctx context.Context) (*l4HTTP3Client, error) {
+	// Serialize initial/reconnect handshakes. Without this, a burst of callers
+	// can all observe client == nil, establish separate QUIC sessions, and then
+	// immediately throw away every session except the winner.
 	p.connMu.Lock()
+	defer p.connMu.Unlock()
+
 	if p.client != nil {
-		client := p.client
-		p.connMu.Unlock()
-		return client, nil
+		return p.client, nil
 	}
-	p.connMu.Unlock()
 
 	udpConn, err := listenUDPForEndpoint(p.endpoint)
 	if err != nil {
@@ -244,23 +246,12 @@ func (p *L4Proxy) getOrCreateClientConn(ctx context.Context) (*l4HTTP3Client, er
 		return nil, err
 	}
 
-	newClient := &l4HTTP3Client{
+	p.client = &l4HTTP3Client{
 		udpConn:    udpConn,
 		quicConn:   quicConn,
 		clientConn: (&http3.Transport{}).NewClientConn(quicConn),
 	}
-
-	p.connMu.Lock()
-	if p.client != nil {
-		current := p.client
-		p.connMu.Unlock()
-		closeL4HTTP3(newClient.udpConn, newClient.quicConn)
-		return current, nil
-	}
-	p.client = newClient
-	p.connMu.Unlock()
-
-	return newClient, nil
+	return p.client, nil
 }
 
 func (p *L4Proxy) closeClientConnIfCurrent(expected *l4HTTP3Client) {
