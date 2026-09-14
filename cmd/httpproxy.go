@@ -150,7 +150,7 @@ var httpProxyCmd = &cobra.Command{
 
 		dnsServers, err := cmd.Flags().GetStringArray("dns")
 		if err != nil {
-			cmd.Printf("Failed to get DNS servers: %v\n", err)
+			cmd.Printf("Failed to parse DNS servers: %v\n", err)
 			return
 		}
 
@@ -264,6 +264,9 @@ var httpProxyCmd = &cobra.Command{
 			HookEnv:           hookEnv,
 		})
 
+		client := newTunnelHTTPClient(tunNet, resolver)
+		defer client.CloseIdleConnections()
+
 		server := &http.Server{
 			Addr: net.JoinHostPort(bindAddress, port),
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -276,7 +279,7 @@ var httpProxyCmd = &cobra.Command{
 				if r.Method == http.MethodConnect {
 					handleHTTPSConnect(w, r, tunNet, resolver)
 				} else {
-					handleHTTPProxy(w, r, tunNet, resolver)
+					handleHTTPProxy(w, r, client)
 				}
 			}),
 		}
@@ -297,8 +300,10 @@ var httpProxyCmd = &cobra.Command{
 // Returns:
 //   - bool: True if the authorization header matches the expected value, otherwise false.
 func authenticate(r *http.Request, expectedAuth string) bool {
-	authHeader := r.Header.Get("Proxy-Authorization")
-	return authHeader == expectedAuth
+	if expectedAuth == "" {
+		return true
+	}
+	return r.Header.Get("Proxy-Authorization") == expectedAuth
 }
 
 // handleHTTPSConnect establishes a tunnel to the destination using the provided resolver.
@@ -364,15 +369,8 @@ func handleHTTPSConnect(w http.ResponseWriter, r *http.Request, tunNet *netstack
 	_, _ = io.Copy(clientConn, destConn)
 }
 
-// handleHTTPProxy forwards HTTP proxy requests to the destination and relays responses back to the client using the provided resolver.
-//
-// Parameters:
-//   - w: http.ResponseWriter - The response writer for the HTTP request.
-//   - r: *http.Request - The incoming HTTP request.
-//   - tunNet: *netstack.Net - The netstack network interface.
-//   - resolver: *net.Resolver - The DNS resolver to use for the tunnel.
-func handleHTTPProxy(w http.ResponseWriter, r *http.Request, tunNet *netstack.Net, resolver *net.Resolver) {
-	client := &http.Client{
+func newTunnelHTTPClient(tunNet *netstack.Net, resolver *net.Resolver) *http.Client {
+	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				host, port, err := net.SplitHostPort(addr)
@@ -395,13 +393,25 @@ func handleHTTPProxy(w http.ResponseWriter, r *http.Request, tunNet *netstack.Ne
 			},
 		},
 	}
+}
 
+// handleHTTPProxy forwards HTTP proxy requests to the destination and relays responses back to the client using the provided resolver.
+//
+// Parameters:
+//   - w: http.ResponseWriter - The response writer for the HTTP request.
+//   - r: *http.Request - The incoming HTTP request.
+//   - client: shared HTTP client whose transport dials through the tunnel.
+func handleHTTPProxy(w http.ResponseWriter, r *http.Request, client *http.Client) {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, r.URL.String(), r.Body)
 	if err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 	req.Header = r.Header.Clone()
+	// Proxy credentials and connection-specific proxy headers are hop-by-hop and
+	// must never be forwarded to the origin server.
+	req.Header.Del("Proxy-Authorization")
+	req.Header.Del("Proxy-Connection")
 
 	resp, err := client.Do(req)
 	if err != nil {
