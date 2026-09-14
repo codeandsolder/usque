@@ -236,6 +236,10 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 	}
 
 	packetBufferPool := NewNetBuffer(cfg.MTU + datagramContextIDHeadroom)
+	// A timed-out pump may remain blocked inside Device.ReadPacket after its
+	// reconnect cycle is canceled. Keep this mutex for the lifetime of the
+	// tunnel supervisor so a later cycle cannot start a second device reader.
+	var readMu sync.Mutex
 
 	for {
 		if ctx.Err() != nil {
@@ -245,7 +249,9 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 		if !cfg.AlwaysReconnect {
 			log.Println("Tunnel idle. Waiting for outbound activity before reconnecting...")
 			buf := packetBufferPool.Get()
+			readMu.Lock()
 			n, err := cfg.Device.ReadPacket(buf[datagramContextIDHeadroom:])
+			readMu.Unlock()
 			if err != nil {
 				packetBufferPool.Put(buf)
 				log.Printf("Failed to read from TUN device while waiting for activity: %v", err)
@@ -311,7 +317,6 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 		errChan := make(chan error, 2)
 		pumpCtx, cancelPumps := context.WithCancel(ctx)
 		var wg sync.WaitGroup
-		var readMu sync.Mutex
 
 		wg.Add(2)
 
