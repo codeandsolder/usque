@@ -83,19 +83,28 @@ var registerCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("Failed to enroll key: %v", err)
 		}
+		if len(updatedAccountData.Config.Peers) == 0 {
+			log.Fatalf("Enrollment response contained no peers")
+		}
+		peer := updatedAccountData.Config.Peers[0]
+		endpointV4, err := endpointHost(peer.Endpoint.V4)
+		if err != nil {
+			log.Fatalf("Failed to parse IPv4 endpoint: %v", err)
+		}
+		endpointV6, err := endpointHost(peer.Endpoint.V6)
+		if err != nil {
+			log.Fatalf("Failed to parse IPv6 endpoint: %v", err)
+		}
 
 		log.Printf("Successful registration. Saving config...")
 
 		config.AppConfig = config.Config{
-			PrivateKey: base64.StdEncoding.EncodeToString(privKey),
-			// TODO: proper endpoint parsing in utils
-			// strip :0
-			EndpointV4: updatedAccountData.Config.Peers[0].Endpoint.V4[:len(updatedAccountData.Config.Peers[0].Endpoint.V4)-2],
-			// strip [ from beginning and ]:0 from end
-			EndpointV6:     updatedAccountData.Config.Peers[0].Endpoint.V6[1 : len(updatedAccountData.Config.Peers[0].Endpoint.V6)-3],
+			PrivateKey:     base64.StdEncoding.EncodeToString(privKey),
+			EndpointV4:     endpointV4,
+			EndpointV6:     endpointV6,
 			EndpointH2V4:   config.DefaultEndpointH2V4,
 			EndpointH2V6:   config.DefaultEndpointH2V6,
-			EndpointPubKey: updatedAccountData.Config.Peers[0].PublicKey,
+			EndpointPubKey: peer.PublicKey,
 			ID:             updatedAccountData.ID,
 			AccessToken:    accountData.Token,
 			IPv4:           updatedAccountData.Config.Interface.Addresses.V4,
