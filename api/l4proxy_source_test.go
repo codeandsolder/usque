@@ -17,6 +17,17 @@ func TestNewL4ProxyRejectsSourceFamilyMismatch(t *testing.T) {
 	}
 }
 
+func TestNewL4ProxyRejectsMissingSourceIP(t *testing.T) {
+	_, err := NewL4Proxy(L4ProxyConfig{
+		TLSConfig: &tls.Config{},
+		Endpoint:  &net.UDPAddr{IP: net.ParseIP("192.0.2.1"), Port: 443},
+		LocalAddr: &net.UDPAddr{},
+	})
+	if err == nil {
+		t.Fatal("expected missing source IP error")
+	}
+}
+
 func TestListenUDPForEndpointUsesLocalAddr(t *testing.T) {
 	endpoint := &net.UDPAddr{IP: net.ParseIP("192.0.2.1"), Port: 443}
 	local := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
