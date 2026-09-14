@@ -23,6 +23,7 @@ type l4ProxyOptions struct {
 	dnsServers        []string
 	dnsTimeout        time.Duration
 	useIPv6           bool
+	sourceIP          string
 	keepalivePeriod   time.Duration
 	initialPacketSize uint16
 	insecure          bool
@@ -63,6 +64,9 @@ func buildL4Proxy(cmd *cobra.Command, mode string) (l4ProxyOptions, *api.L4Proxy
 	}
 	if opts.useIPv6, err = cmd.Flags().GetBool("ipv6"); err != nil {
 		return opts, nil, fmt.Errorf("failed to get ipv6 flag: %v", err)
+	}
+	if opts.sourceIP, err = cmd.Flags().GetString("source-ip"); err != nil {
+		return opts, nil, fmt.Errorf("failed to get source-ip flag: %v", err)
 	}
 	if opts.keepalivePeriod, err = cmd.Flags().GetDuration("keepalive-period"); err != nil {
 		return opts, nil, fmt.Errorf("failed to get keepalive period: %v", err)
@@ -119,6 +123,14 @@ func buildL4Proxy(cmd *cobra.Command, mode string) (l4ProxyOptions, *api.L4Proxy
 		return opts, nil, fmt.Errorf("l4 proxy requires an HTTP/3 UDP endpoint")
 	}
 
+	localAddr, err := parseL4SourceAddr(opts.sourceIP)
+	if err != nil {
+		return opts, nil, fmt.Errorf("failed to parse source IP: %v", err)
+	}
+	if localAddr != nil {
+		log.Printf("Pinning L4 MASQUE source to %s", localAddr.IP)
+	}
+
 	dnsAddrs, err := parseDNSAddrs(opts.dnsServers)
 	if err != nil {
 		return opts, nil, fmt.Errorf("failed to parse DNS server: %v", err)
@@ -140,6 +152,7 @@ func buildL4Proxy(cmd *cobra.Command, mode string) (l4ProxyOptions, *api.L4Proxy
 		TLSConfig:      tlsConfig,
 		QUICConfig:     l4QUICConfig(opts.keepalivePeriod, opts.initialPacketSize),
 		Endpoint:       endpoint,
+		LocalAddr:      localAddr,
 		DNSResolver:    resolver,
 		ResolveLocally: opts.localDNS,
 		OnConnect: func(target string) {
@@ -200,6 +213,21 @@ func parseDNSAddrs(servers []string) ([]netip.Addr, error) {
 	return addrs, nil
 }
 
+func parseL4SourceAddr(raw string) (*net.UDPAddr, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	addr, err := netip.ParseAddr(raw)
+	if err != nil {
+		return nil, err
+	}
+	return &net.UDPAddr{
+		IP:   net.IP(addr.AsSlice()),
+		Port: 0,
+		Zone: addr.Zone(),
+	}, nil
+}
+
 func addL4ProxyFlags(cmd *cobra.Command, defaultPort, proxyName string) {
 	cmd.Flags().StringP("bind", "b", "0.0.0.0", "Address to bind the "+proxyName+" proxy to")
 	cmd.Flags().StringP("port", "p", defaultPort, "Port to listen on for "+proxyName+" proxy")
@@ -209,6 +237,7 @@ func addL4ProxyFlags(cmd *cobra.Command, defaultPort, proxyName string) {
 	cmd.Flags().StringArrayP("dns", "d", []string{"9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9"}, "DNS servers for local proxy name lookups with -l (unless --system-dns)")
 	cmd.Flags().DurationP("dns-timeout", "t", 2*time.Second, "Timeout for DNS queries")
 	cmd.Flags().BoolP("ipv6", "6", false, "Use IPv6 for MASQUE connection")
+	cmd.Flags().String("source-ip", "", "Pin the L4 MASQUE outbound UDP socket source IP. Empty = let the kernel pick.")
 	cmd.Flags().DurationP("keepalive-period", "k", 30*time.Second, "Keepalive period for MASQUE connection")
 	cmd.Flags().Uint16P("initial-packet-size", "i", 0, "Custom initial packet size for MASQUE connection (default: auto with PMTU discovery)")
 	cmd.Flags().Bool("insecure", false, "Disable endpoint certificate pinning and trust any certificate")
