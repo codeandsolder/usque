@@ -3,6 +3,7 @@ module github.com/Diniboy1123/usque
 go 1.26.3
 
 require (
+	codeberg.org/miekg/dns v0.6.95
 	github.com/Diniboy1123/connect-ip-go v0.0.0-20260613064811-66cba32d7d33
 	github.com/quic-go/quic-go v0.60.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
