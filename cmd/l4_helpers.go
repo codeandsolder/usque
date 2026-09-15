@@ -84,6 +84,9 @@ func buildL4Proxy(cmd *cobra.Command, mode string) (l4ProxyOptions, *api.L4Proxy
 	if opts.dnsNegativeTTL, err = cmd.Flags().GetDuration("dns-negative-ttl"); err != nil {
 		return opts, nil, fmt.Errorf("failed to get dns-negative-ttl flag: %v", err)
 	}
+	if opts.dnsCache && !cmd.Flags().Changed("dns") {
+		opts.dnsServers = []string{"1.1.1.1", "8.8.8.8"}
+	}
 	if opts.useIPv6, err = cmd.Flags().GetBool("ipv6"); err != nil {
 		return opts, nil, fmt.Errorf("failed to get ipv6 flag: %v", err)
 	}
@@ -300,7 +303,7 @@ func addL4ProxyFlags(cmd *cobra.Command, defaultPort, proxyName string) {
 	cmd.Flags().StringP("username", "u", "", "Username for proxy authentication (specify both username and password to enable)")
 	cmd.Flags().StringP("password", "w", "", "Password for proxy authentication (specify both username and password to enable)")
 	cmd.Flags().IntP("connect-port", "P", 443, "Used port for MASQUE connection")
-	cmd.Flags().StringArrayP("dns", "d", []string{"1.1.1.1", "8.8.8.8"}, "DNS upstream IPs (raced in parallel by --dns-cache; used for local lookups otherwise)")
+	cmd.Flags().StringArrayP("dns", "d", []string{"9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9"}, "DNS server IPs; cached DNS defaults to 1.1.1.1 + 8.8.8.8 unless this flag is set")
 	cmd.Flags().DurationP("dns-timeout", "t", 2*time.Second, "Timeout for DNS queries")
 	cmd.Flags().Bool("dns-cache", false, "Enable the optional TTL-aware caching DNS resolver")
 	cmd.Flags().String("dns-mode", "tunnel", "Cached DNS transport: tunnel or direct")
