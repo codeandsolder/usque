@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"github.com/Diniboy1123/usque/api"
 	"github.com/Diniboy1123/usque/config"
 	"github.com/Diniboy1123/usque/internal"
+	"github.com/Diniboy1123/usque/internal/cacheddns"
 	quic "github.com/quic-go/quic-go"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +24,11 @@ type l4ProxyOptions struct {
 	connectPort       int
 	dnsServers        []string
 	dnsTimeout        time.Duration
+	dnsCache          bool
+	dnsMode           string
+	dnsCacheSize      int
+	dnsNegativePolicy string
+	dnsNegativeTTL    time.Duration
 	useIPv6           bool
 	sourceIP          string
 	keepalivePeriod   time.Duration
@@ -61,6 +68,21 @@ func buildL4Proxy(cmd *cobra.Command, mode string) (l4ProxyOptions, *api.L4Proxy
 	}
 	if opts.dnsTimeout, err = cmd.Flags().GetDuration("dns-timeout"); err != nil {
 		return opts, nil, fmt.Errorf("failed to get DNS timeout: %v", err)
+	}
+	if opts.dnsCache, err = cmd.Flags().GetBool("dns-cache"); err != nil {
+		return opts, nil, fmt.Errorf("failed to get dns-cache flag: %v", err)
+	}
+	if opts.dnsMode, err = cmd.Flags().GetString("dns-mode"); err != nil {
+		return opts, nil, fmt.Errorf("failed to get dns-mode flag: %v", err)
+	}
+	if opts.dnsCacheSize, err = cmd.Flags().GetInt("dns-cache-size"); err != nil {
+		return opts, nil, fmt.Errorf("failed to get dns-cache-size flag: %v", err)
+	}
+	if opts.dnsNegativePolicy, err = cmd.Flags().GetString("dns-negative-policy"); err != nil {
+		return opts, nil, fmt.Errorf("failed to get dns-negative-policy flag: %v", err)
+	}
+	if opts.dnsNegativeTTL, err = cmd.Flags().GetDuration("dns-negative-ttl"); err != nil {
+		return opts, nil, fmt.Errorf("failed to get dns-negative-ttl flag: %v", err)
 	}
 	if opts.useIPv6, err = cmd.Flags().GetBool("ipv6"); err != nil {
 		return opts, nil, fmt.Errorf("failed to get ipv6 flag: %v", err)
@@ -142,19 +164,63 @@ func buildL4Proxy(cmd *cobra.Command, mode string) (l4ProxyOptions, *api.L4Proxy
 		"USQUE_IPV6": config.AppConfig.IPv6,
 	}
 
-	resolver := &internal.TunnelDNSResolver{
-		DNSAddrs:      dnsAddrs,
-		Timeout:       opts.dnsTimeout,
-		UseOSResolver: opts.localDNS && opts.systemDNS,
+	var resolver api.DNSResolver
+	var proxy *api.L4Proxy
+	resolveLocally := opts.localDNS
+
+	if opts.dnsCache {
+		if opts.systemDNS {
+			return opts, nil, fmt.Errorf("--system-dns cannot be combined with --dns-cache; disable the cache to use host DNS")
+		}
+		negativePolicy, err := cacheddns.ParseNegativePolicy(opts.dnsNegativePolicy)
+		if err != nil {
+			return opts, nil, err
+		}
+
+		var dnsDial cacheddns.DialContextFunc
+		switch opts.dnsMode {
+		case "tunnel":
+			dnsDial = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if proxy == nil {
+					return nil, fmt.Errorf("L4 proxy is not initialized")
+				}
+				return proxy.DialContext(ctx, address)
+			}
+		case "direct":
+			dialer := &net.Dialer{}
+			dnsDial = dialer.DialContext
+		default:
+			return opts, nil, fmt.Errorf("invalid --dns-mode %q (want tunnel or direct)", opts.dnsMode)
+		}
+
+		resolver, err = cacheddns.New(cacheddns.Options{
+			Upstreams:      dnsAddrs,
+			DialContext:    dnsDial,
+			Timeout:        opts.dnsTimeout,
+			Capacity:       opts.dnsCacheSize,
+			NegativeTTL:    opts.dnsNegativeTTL,
+			NegativePolicy: negativePolicy,
+		})
+		if err != nil {
+			return opts, nil, fmt.Errorf("failed to configure cached DNS resolver: %v", err)
+		}
+		resolveLocally = true
+		log.Printf("Cached DNS enabled: mode=%s upstreams=%v negative=%s", opts.dnsMode, dnsAddrs, negativePolicy)
+	} else {
+		resolver = &internal.TunnelDNSResolver{
+			DNSAddrs:      dnsAddrs,
+			Timeout:       opts.dnsTimeout,
+			UseOSResolver: opts.localDNS && opts.systemDNS,
+		}
 	}
 
-	proxy, err := api.NewL4Proxy(api.L4ProxyConfig{
+	proxy, err = api.NewL4Proxy(api.L4ProxyConfig{
 		TLSConfig:      tlsConfig,
 		QUICConfig:     l4QUICConfig(opts.keepalivePeriod, opts.initialPacketSize),
 		Endpoint:       endpoint,
 		LocalAddr:      localAddr,
 		DNSResolver:    resolver,
-		ResolveLocally: opts.localDNS,
+		ResolveLocally: resolveLocally,
 		OnConnect: func(target string) {
 			env := cloneHookEnv(hookEnv)
 			env["USQUE_EVENT"] = "connect"
@@ -234,8 +300,13 @@ func addL4ProxyFlags(cmd *cobra.Command, defaultPort, proxyName string) {
 	cmd.Flags().StringP("username", "u", "", "Username for proxy authentication (specify both username and password to enable)")
 	cmd.Flags().StringP("password", "w", "", "Password for proxy authentication (specify both username and password to enable)")
 	cmd.Flags().IntP("connect-port", "P", 443, "Used port for MASQUE connection")
-	cmd.Flags().StringArrayP("dns", "d", []string{"9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9"}, "DNS servers for local proxy name lookups with -l (unless --system-dns)")
+	cmd.Flags().StringArrayP("dns", "d", []string{"1.1.1.1", "8.8.8.8"}, "DNS upstream IPs (raced in parallel by --dns-cache; used for local lookups otherwise)")
 	cmd.Flags().DurationP("dns-timeout", "t", 2*time.Second, "Timeout for DNS queries")
+	cmd.Flags().Bool("dns-cache", false, "Enable the optional TTL-aware caching DNS resolver")
+	cmd.Flags().String("dns-mode", "tunnel", "Cached DNS transport: tunnel or direct")
+	cmd.Flags().Int("dns-cache-size", 4096, "Maximum cached DNS responses")
+	cmd.Flags().String("dns-negative-policy", "return", "Cached negative-answer policy: return, retry, or off")
+	cmd.Flags().Duration("dns-negative-ttl", 30*time.Second, "Fallback TTL for negative answers without an SOA")
 	cmd.Flags().BoolP("ipv6", "6", false, "Use IPv6 for MASQUE connection")
 	cmd.Flags().String("source-ip", "", "Pin the L4 MASQUE outbound UDP socket source IP. Empty = let the kernel pick.")
 	cmd.Flags().DurationP("keepalive-period", "k", 30*time.Second, "Keepalive period for MASQUE connection")
