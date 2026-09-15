@@ -285,6 +285,9 @@ func responseTTL(msg *dns.Msg) time.Duration {
 	found := false
 	for _, section := range [][]dns.RR{msg.Answer, msg.Ns, msg.Extra} {
 		for _, rr := range section {
+			if _, ok := rr.(*dns.OPT); ok {
+				continue
+			}
 			ttl := rr.Header().TTL
 			if !found || ttl < min {
 				min = ttl
