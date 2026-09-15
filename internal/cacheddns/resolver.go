@@ -217,7 +217,7 @@ func (r *Resolver) query(ctx context.Context, name string, qtype uint16) (*dns.M
 				results <- result{err: err}
 				return
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 
 			q := dns.NewMsg(name, qtype)
 			if q == nil {
