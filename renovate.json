@@ -96,7 +96,7 @@
       ],
       "depNameTemplate": "golangci/golangci-lint",
       "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver"
+      "versioningTemplate": "semver-coerced"
     },
     {
       "customType": "regex",
@@ -108,7 +108,8 @@
       ],
       "depNameTemplate": "goreleaser/goreleaser",
       "datasourceTemplate": "github-releases",
-      "versioningTemplate": "semver"
+      "versioningTemplate": "semver-coerced"
     }
-  ]
+  ],
+  "dependencyDashboardApproval": false
 }
