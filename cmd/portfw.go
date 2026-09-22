@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -397,8 +396,7 @@ func handleConnection(localConn net.Conn, pm internal.PortMapping, isRemote bool
 	}
 	defer func() { _ = remoteConn.Close() }()
 
-	go func() { _, _ = io.Copy(remoteConn, localConn) }()
-	_, _ = io.Copy(localConn, remoteConn)
+	api.RelayTCP(localConn, remoteConn)
 }
 
 func init() {
