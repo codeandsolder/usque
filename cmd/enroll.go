@@ -3,6 +3,7 @@ package cmd
 import (
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 
@@ -75,7 +76,8 @@ var enrollCmd = &cobra.Command{
 
 		accountData, err := api.EnrollKey(config.AppConfig.ID, config.AppConfig.AccessToken, publicKey, deviceName)
 		if err != nil {
-			if apiErr, ok := err.(models.APIError); ok && apiErr.HasErrorCode(models.InvalidPublicKey) {
+			var apiErr *models.APIError
+			if errors.As(err, &apiErr) && apiErr.HasErrorCode(models.InvalidPublicKey) {
 				fmt.Print("Invalid public key detected. Regenerate key? (y/n): ")
 
 				var response string
@@ -86,12 +88,22 @@ var enrollCmd = &cobra.Command{
 				if response == "y" {
 					regenKey = true
 					goto retry
-				} else {
-					log.Fatalf("Enrollment aborted by user. %v", apiErr)
 				}
-			} else {
-				log.Fatalf("Failed to enroll key: %v", err)
+				log.Fatalf("Enrollment aborted by user. %v", apiErr)
 			}
+			log.Fatalf("Failed to enroll key: %v", err)
+		}
+		if len(accountData.Config.Peers) == 0 {
+			log.Fatalf("Enrollment response contained no peers")
+		}
+		peer := accountData.Config.Peers[0]
+		endpointV4, err := endpointHost(peer.Endpoint.V4)
+		if err != nil {
+			log.Fatalf("Failed to parse IPv4 endpoint: %v", err)
+		}
+		endpointV6, err := endpointHost(peer.Endpoint.V6)
+		if err != nil {
+			log.Fatalf("Failed to parse IPv6 endpoint: %v", err)
 		}
 
 		log.Printf("Successful registration. Saving config...")
@@ -102,15 +114,12 @@ var enrollCmd = &cobra.Command{
 		}
 
 		config.AppConfig = config.Config{
-			PrivateKey: base64.StdEncoding.EncodeToString(privKeyBytes),
-			// TODO: proper endpoint parsing in utils
-			// strip :0
-			EndpointV4: accountData.Config.Peers[0].Endpoint.V4[:len(accountData.Config.Peers[0].Endpoint.V4)-2],
-			// strip [ from beginning and ]:0 from end
-			EndpointV6:     accountData.Config.Peers[0].Endpoint.V6[1 : len(accountData.Config.Peers[0].Endpoint.V6)-3],
+			PrivateKey:     base64.StdEncoding.EncodeToString(privKeyBytes),
+			EndpointV4:     endpointV4,
+			EndpointV6:     endpointV6,
 			EndpointH2V4:   h2v4,
 			EndpointH2V6:   config.AppConfig.EndpointH2V6,
-			EndpointPubKey: accountData.Config.Peers[0].PublicKey,
+			EndpointPubKey: peer.PublicKey,
 			ID:             accountData.ID,
 			AccessToken:    config.AppConfig.AccessToken,
 			IPv4:           accountData.Config.Interface.Addresses.V4,

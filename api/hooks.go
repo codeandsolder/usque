@@ -76,6 +76,9 @@ func relayHookOutput(r io.Reader, label string, done chan<- struct{}) {
 	for scanner.Scan() {
 		log.Printf("%s: %s", label, scanner.Text())
 	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("%s: failed while reading hook output: %v", label, err)
+	}
 }
 
 // mergeEnv returns a new slice containing base followed by KEY=VALUE entries
