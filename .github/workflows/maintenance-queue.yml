@@ -1,0 +1,32 @@
+name: Maintenance issue queue
+
+on:
+  schedule:
+    # Runs before the 04:00 Europe/Warsaw general maintenance sweep in CET and CEST.
+    - cron: "17 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      QUARANTINE_HOURS: "72"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run mechanically quarantined maintenance detector
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/maintenance_detector.py
