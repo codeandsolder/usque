@@ -28,6 +28,20 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Download and verify Wintun
+        env:
+          WINTUN_VERSION: "0.14.1"
+          WINTUN_SHA256: "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51"
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/wintun-${WINTUN_VERSION}.zip"
+          curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' \
+            --output "${archive}" \
+            "https://www.wintun.net/builds/wintun-${WINTUN_VERSION}.zip"
+          printf '%s  %s\n' "${WINTUN_SHA256}" "${archive}" | sha256sum --check --strict -
+          unzip -q "${archive}" -d "${GITHUB_WORKSPACE}"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

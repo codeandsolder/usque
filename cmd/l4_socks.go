@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"time"
 
 	"github.com/Diniboy1123/usque/internal"
 	"github.com/spf13/cobra"
@@ -28,8 +29,9 @@ var l4SocksCmd = &cobra.Command{
 			DialTCP: func(ctx context.Context, network, address string) (net.Conn, error) {
 				return proxy.DialContext(ctx, address)
 			},
-			TCPOnly: true,
-			Logger:  log.Default(),
+			TCPOnly:     true,
+			DialTimeout: 15 * time.Second,
+			Logger:      log.Default(),
 		})
 		if err != nil {
 			cmd.Printf("Failed to create SOCKS proxy: %v\n", err)

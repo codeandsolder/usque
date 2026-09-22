@@ -294,13 +294,14 @@ var socksCmd = &cobra.Command{
 		}
 
 		server, err := internal.NewSOCKS5Server(internal.SOCKS5Config{
-			Addr:       net.JoinHostPort(bindAddress, port),
-			Username:   username,
-			Password:   password,
-			Resolver:   resolver,
-			TunNet:     tunNet,
-			UDPTimeout: udpTimeout,
-			Logger:     log.New(internal.NewTZStampWriter(os.Stderr), "socks5: ", 0),
+			Addr:        net.JoinHostPort(bindAddress, port),
+			Username:    username,
+			Password:    password,
+			Resolver:    resolver,
+			TunNet:      tunNet,
+			UDPTimeout:  udpTimeout,
+			DialTimeout: 15 * time.Second,
+			Logger:      log.New(internal.NewTZStampWriter(os.Stderr), "socks5: ", 0),
 		})
 		if err != nil {
 			cmd.Printf("Failed to create SOCKS proxy: %v\n", err)

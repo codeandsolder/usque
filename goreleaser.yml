@@ -125,12 +125,33 @@ builds:
       - "-X github.com/Diniboy1123/usque/cmd.date={{.Date}}"
 
 archives:
-  - formats:
-    - zip
+  - id: non-windows
+    ids:
+      - android
+      - linux-amd64
+      - linux-arm
+      - linux-arm64
+      - linux-mips
+      - darwin
+    formats:
+      - zip
     name_template: "usque_{{.Version}}_{{.Os}}_{{.Arch}}{{if .Arm}}v{{.Arm}}{{end}}{{if and (eq .Arch \"amd64\") (ne .Amd64 \"v1\")}}_{{.Amd64}}{{end}}"
     files:
       - LICENSE.md
       - README.md
+
+  - id: windows
+    ids:
+      - windows
+    formats:
+      - zip
+    name_template: "usque_{{.Version}}_{{.Os}}_{{.Arch}}{{if .Arm}}v{{.Arm}}{{end}}"
+    files:
+      - LICENSE.md
+      - README.md
+      - src: 'wintun/bin/{{ if eq .Arch "386" }}x86{{ else }}{{ .Arch }}{{ end }}/wintun.dll'
+        dst: .
+        strip_parent: true
 
 checksum:
   name_template: "checksums.txt"
