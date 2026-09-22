@@ -30,6 +30,7 @@ type L4ProxyConfig struct {
 	TLSConfig         *tls.Config
 	QUICConfig        *quic.Config
 	Endpoint          *net.UDPAddr
+	LocalAddr         *net.UDPAddr
 	DNSResolver       DNSResolver
 	ResolveLocally    bool
 	OnConnect         func(target string)
@@ -43,6 +44,7 @@ type L4Proxy struct {
 	tlsConfig         *tls.Config
 	quicConfig        *quic.Config
 	endpoint          *net.UDPAddr
+	localAddr         *net.UDPAddr
 	dnsResolver       DNSResolver
 	resolveLocally    bool
 	onConnect         func(target string)
@@ -68,6 +70,9 @@ func NewL4Proxy(cfg L4ProxyConfig) (*L4Proxy, error) {
 	if cfg.Endpoint == nil {
 		return nil, fmt.Errorf("missing HTTP/3 UDP endpoint")
 	}
+	if err := validateL4LocalAddr(cfg.Endpoint, cfg.LocalAddr); err != nil {
+		return nil, err
+	}
 	if cfg.ResolveLocally && cfg.DNSResolver == nil {
 		return nil, fmt.Errorf("missing DNS resolver")
 	}
@@ -82,6 +87,7 @@ func NewL4Proxy(cfg L4ProxyConfig) (*L4Proxy, error) {
 		tlsConfig:         cfg.TLSConfig,
 		quicConfig:        cfg.QUICConfig,
 		endpoint:          cfg.Endpoint,
+		localAddr:         cfg.LocalAddr,
 		dnsResolver:       cfg.DNSResolver,
 		resolveLocally:    cfg.ResolveLocally,
 		onConnect:         cfg.OnConnect,
@@ -234,7 +240,7 @@ func (p *L4Proxy) getOrCreateClientConn(ctx context.Context) (*l4HTTP3Client, er
 	}
 	p.connMu.Unlock()
 
-	udpConn, err := listenUDPForEndpoint(p.endpoint)
+	udpConn, err := listenUDPForEndpoint(p.endpoint, p.localAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +288,25 @@ func (p *L4Proxy) closeClientConnIfCurrent(expected *l4HTTP3Client) {
 	closeL4HTTP3(expected.udpConn, expected.quicConn)
 }
 
-func listenUDPForEndpoint(endpoint *net.UDPAddr) (*net.UDPConn, error) {
+func validateL4LocalAddr(endpoint, localAddr *net.UDPAddr) error {
+	if localAddr == nil {
+		return nil
+	}
+	if localAddr.IP == nil {
+		return fmt.Errorf("L4 source address is missing an IP")
+	}
+	endpointV4 := endpoint.IP.To4() != nil
+	localV4 := localAddr.IP.To4() != nil
+	if endpointV4 != localV4 {
+		return fmt.Errorf("L4 source address %s and endpoint %s use different address families", localAddr.IP, endpoint.IP)
+	}
+	return nil
+}
+
+func listenUDPForEndpoint(endpoint, localAddr *net.UDPAddr) (*net.UDPConn, error) {
+	if localAddr != nil {
+		return net.ListenUDP("udp", localAddr)
+	}
 	if endpoint.IP.To4() == nil {
 		return net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv6zero})
 	}
