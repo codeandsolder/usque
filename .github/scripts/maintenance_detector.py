@@ -121,7 +121,7 @@ It becomes eligible only if this issue remains open with the same fingerprint fo
 
 {summary}
 
-This issue intentionally has no `automation-queue:` marker. The maintenance agent should ignore it.
+This issue is non-actionable quarantine state. The maintenance sweep must ignore it.
 """
 
 
