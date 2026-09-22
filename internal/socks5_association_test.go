@@ -2,9 +2,11 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/txthinking/socks5"
 )
@@ -121,5 +123,29 @@ func TestFindUDPAssociationClaimsSeparatePorts(t *testing.T) {
 	got2, ok2, err := s.findUDPAssociation(s.server, addr2)
 	if err != nil || !ok2 || got2 != second {
 		t.Fatalf("second claim = (%p, %v, %v), want (%p, true, nil)", got2, ok2, err, second)
+	}
+}
+
+func TestSOCKS5DialTimeoutReachesCustomDialer(t *testing.T) {
+	const timeout = 40 * time.Millisecond
+	s, err := NewSOCKS5Server(SOCKS5Config{
+		Addr:        "127.0.0.1:0",
+		DialTimeout: timeout,
+		DialTCP: func(ctx context.Context, network, address string) (net.Conn, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSOCKS5Server: %v", err)
+	}
+
+	start := time.Now()
+	_, err = s.dialTCP("tcp", "", "example.com:443")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("dialTCP error = %v, want context deadline exceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("dial timeout took %s, expected roughly %s", elapsed, timeout)
 	}
 }

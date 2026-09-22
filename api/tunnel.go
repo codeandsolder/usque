@@ -246,6 +246,8 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 			return
 		}
 
+		var firstPacket []byte
+		var firstPacketLen int
 		if !cfg.AlwaysReconnect {
 			log.Println("Tunnel idle. Waiting for outbound activity before reconnecting...")
 			buf := packetBufferPool.Get()
@@ -260,7 +262,8 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 				}
 				continue
 			}
-			packetBufferPool.Put(buf)
+			firstPacket = buf
+			firstPacketLen = n
 			log.Printf("Detected outbound activity (%d bytes). Reconnecting...", n)
 		}
 
@@ -275,6 +278,9 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 			cfg.LocalAddr,
 		)
 		if err != nil {
+			if firstPacket != nil {
+				packetBufferPool.Put(firstPacket)
+			}
 			log.Printf("Failed to connect tunnel: %v", err)
 			if ipConn != nil {
 				_ = ipConn.Close()
@@ -291,6 +297,9 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 			continue
 		}
 		if rsp.StatusCode != 200 {
+			if firstPacket != nil {
+				packetBufferPool.Put(firstPacket)
+			}
 			log.Printf("Tunnel connection failed: %s", rsp.Status)
 			_ = ipConn.Close()
 			if tr != nil {
@@ -317,11 +326,54 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 		errChan := make(chan error, 2)
 		pumpCtx, cancelPumps := context.WithCancel(ctx)
 		var wg sync.WaitGroup
+		icmpChan := make(chan []byte, 32)
 
-		wg.Add(2)
+		wg.Add(3)
 
 		go func() {
 			defer wg.Done()
+			for {
+				select {
+				case <-pumpCtx.Done():
+					return
+				case packet := <-icmpChan:
+					if err := cfg.Device.WritePacket(packet); err != nil {
+						select {
+						case errChan <- fmt.Errorf("failed to write ICMP to TUN device: %w", err):
+						case <-pumpCtx.Done():
+						}
+						return
+					}
+				}
+			}
+		}()
+
+		go func(firstPacket []byte, firstPacketLen int) {
+			defer wg.Done()
+			sendPacket := func(buf []byte, n int) bool {
+				icmp, err := ipConn.WritePacketBuffer(buf, datagramContextIDHeadroom, n)
+				packetBufferPool.Put(buf)
+				if err != nil {
+					if errors.As(err, new(*connectip.CloseError)) {
+						errChan <- fmt.Errorf("connection closed while writing to IP connection: %w", err)
+						return false
+					}
+					log.Printf("Error writing to IP connection: %v, continuing...", err)
+					return true
+				}
+				if len(icmp) > 0 {
+					select {
+					case icmpChan <- icmp:
+					default:
+						log.Println("Dropping ICMP packet: injector queue full")
+					}
+				}
+				return true
+			}
+
+			if firstPacket != nil && !sendPacket(firstPacket, firstPacketLen) {
+				return
+			}
 			for {
 				if pumpCtx.Err() != nil {
 					return
@@ -339,29 +391,11 @@ func MaintainTunnel(ctx context.Context, cfg MaintainTunnelConfig) {
 					packetBufferPool.Put(buf)
 					return
 				}
-				icmp, err := ipConn.WritePacketBuffer(buf, datagramContextIDHeadroom, n)
-				if err != nil {
-					packetBufferPool.Put(buf)
-					if errors.As(err, new(*connectip.CloseError)) {
-						errChan <- fmt.Errorf("connection closed while writing to IP connection: %w", err)
-						return
-					}
-					log.Printf("Error writing to IP connection: %v, continuing...", err)
-					continue
-				}
-				packetBufferPool.Put(buf)
-
-				if len(icmp) > 0 {
-					if err := cfg.Device.WritePacket(icmp); err != nil {
-						if errors.As(err, new(*connectip.CloseError)) {
-							errChan <- fmt.Errorf("connection closed while writing ICMP to TUN device: %w", err)
-							return
-						}
-						log.Printf("Error writing ICMP to TUN device: %v, continuing...", err)
-					}
+				if !sendPacket(buf, n) {
+					return
 				}
 			}
-		}()
+		}(firstPacket, firstPacketLen)
 
 		go func() {
 			defer wg.Done()

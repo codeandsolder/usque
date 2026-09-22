@@ -18,16 +18,17 @@ import (
 
 // SOCKS5Config holds listen address, auth, tunnel dialers, and timeouts for [SOCKS5Server].
 type SOCKS5Config struct {
-	Addr       string
-	Username   string
-	Password   string
-	Resolver   *TunnelDNSResolver
-	TunNet     *netstack.Net
-	DialTCP    func(ctx context.Context, network, address string) (net.Conn, error)
-	TCPOnly    bool
-	TCPTimeout time.Duration // 0 = no deadline on TCP CONNECT relay
-	UDPTimeout time.Duration // 0 = no deadline on remote UDP reads
-	Logger     *log.Logger
+	Addr        string
+	Username    string
+	Password    string
+	Resolver    *TunnelDNSResolver
+	TunNet      *netstack.Net
+	DialTCP     func(ctx context.Context, network, address string) (net.Conn, error)
+	TCPOnly     bool
+	TCPTimeout  time.Duration // 0 = no deadline on TCP CONNECT relay
+	UDPTimeout  time.Duration // 0 = no deadline on remote UDP reads
+	DialTimeout time.Duration // 0 = no deadline while establishing a proxied connection
+	Logger      *log.Logger
 }
 
 // SOCKS5Server wraps txthinking/socks5; DialTCP/DialUDP are package globals (last NewSOCKS5Server wins).
@@ -144,6 +145,13 @@ func (s *SOCKS5Server) Start() error {
 	return s.listenAndServe()
 }
 
+func (s *SOCKS5Server) dialContext() (context.Context, context.CancelFunc) {
+	if s.cfg.DialTimeout > 0 {
+		return context.WithTimeout(context.Background(), s.cfg.DialTimeout)
+	}
+	return context.Background(), func() {}
+}
+
 // listenAndServe mirrors socks5.Server.ListenAndServe but the UDP relay uses
 // udpReadBufPool. Datagrams reference the buffer until UDPHandle returns.
 func (s *SOCKS5Server) listenAndServe() error {
@@ -251,12 +259,14 @@ func logSOCKSError(stage string, addr net.Addr, err error) {
 }
 
 func (s *SOCKS5Server) dialTCP(network, _, raddr string) (net.Conn, error) {
+	ctx, cancel := s.dialContext()
+	defer cancel()
 	if s.cfg.DialTCP != nil {
-		return s.cfg.DialTCP(context.Background(), network, raddr)
+		return s.cfg.DialTCP(ctx, network, raddr)
 	}
 	// Default (tunnel DNS): one netstack lookup + dial, same as the old things-go WithDial path.
 	if s.cfg.Resolver.TunNet != nil {
-		return s.cfg.TunNet.DialContext(context.Background(), network, raddr)
+		return s.cfg.TunNet.DialContext(ctx, network, raddr)
 	}
 	host, port, err := net.SplitHostPort(raddr)
 	if err != nil {
@@ -267,9 +277,9 @@ func (s *SOCKS5Server) dialTCP(network, _, raddr string) (net.Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return s.cfg.TunNet.DialContextTCP(context.Background(), addr)
+		return s.cfg.TunNet.DialContextTCP(ctx, addr)
 	}
-	resIP, err := s.cfg.Resolver.Resolve(context.Background(), host)
+	resIP, err := s.cfg.Resolver.Resolve(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -277,12 +287,14 @@ func (s *SOCKS5Server) dialTCP(network, _, raddr string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.cfg.TunNet.DialContextTCP(context.Background(), addr)
+	return s.cfg.TunNet.DialContextTCP(ctx, addr)
 }
 
 func (s *SOCKS5Server) dialUDP(network, laddr, raddr string) (net.Conn, error) {
+	ctx, cancel := s.dialContext()
+	defer cancel()
 	if s.cfg.Resolver.TunNet != nil {
-		c, err := s.cfg.TunNet.DialContext(context.Background(), network, raddr)
+		c, err := s.cfg.TunNet.DialContext(ctx, network, raddr)
 		if err != nil {
 			if strings.Contains(err.Error(), "port is in use") {
 				return nil, &net.AddrError{Err: "address already in use", Addr: laddr}
@@ -302,7 +314,7 @@ func (s *SOCKS5Server) dialUDP(network, laddr, raddr string) (net.Conn, error) {
 		}
 		return s.cfg.TunNet.DialUDP(nil, addr)
 	}
-	resIP, err := s.cfg.Resolver.Resolve(context.Background(), host)
+	resIP, err := s.cfg.Resolver.Resolve(ctx, host)
 	if err != nil {
 		return nil, err
 	}
