@@ -275,20 +275,21 @@ def detect_modules():
     if proc.returncode:
         raise RuntimeError("go mod tidy failed:\n" + proc.stdout[-12000:])
 
-    changed = run("git", "diff", "--quiet", "--", "go.mod", "go.sum", check=False).returncode != 0
-    if not changed:
+    after = module_map()
+    if after == before:
+        # Probing newer candidates can add checksum entries even after the held
+        # module graph is restored. That is not an update candidate.
         run("git", "reset", "--hard", "HEAD")
         return None
 
-    after = module_map()
     changes = []
     for path in sorted(set(before) | set(after)):
         if before.get(path) != after.get(path):
             changes.append((path, before.get(path, "(none)"), after.get(path, "(removed)")))
 
     go_mod = (ROOT / "go.mod").read_bytes()
-    go_sum = (ROOT / "go.sum").read_bytes()
-    fingerprint = hashlib.sha256(go_mod + b"\0" + go_sum).hexdigest()
+    resolved = json.dumps(after, sort_keys=True, separators=(",", ":")).encode()
+    fingerprint = hashlib.sha256(go_mod + b"\0" + resolved).hexdigest()
     diff = run("git", "diff", "--", "go.mod").stdout
     run("git", "reset", "--hard", "HEAD")
 
@@ -311,7 +312,7 @@ The resulting `go.mod` change is:
 {diff}
 ```
 
-Reproduce these exact versions, run `go mod tidy`, review noteworthy release notes/API changes, and run the full CI/release validation. The fingerprint also covers the resulting `go.sum`.
+Reproduce these exact versions, run `go mod tidy`, review noteworthy release notes/API changes, and run the full CI/release validation. The fingerprint covers the resulting `go.mod` plus the exact resolved module graph; transient `go.sum` churn from probing held candidates is intentionally ignored.
 
 Current mechanical compatibility holds:
 {hold_lines or "- none"}"""
