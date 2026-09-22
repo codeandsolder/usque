@@ -1,4 +1,0 @@
-# Mechanical compatibility holds reapplied after "go get -u ./...".
-# Remove or change a hold only after its upstream incompatibility is resolved.
-gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb # next pseudo-version ships pkg/tcpip/stack/bridge_test.go under a different package
-github.com/quic-go/quic-go v0.60.0 # current Diniboy1123/connect-ip-go still uses removed http3.ParseCapsule API
