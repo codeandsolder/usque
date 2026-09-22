@@ -337,20 +337,24 @@ func (s *SOCKS5Server) TCPHandle(srv *socks5.Server, c *net.TCPConn, r *socks5.R
 			return err
 		}
 		assoc := &udpAssociation{ch: make(chan byte)}
-		defer close(assoc.ch)
 		if isZeroUDPAssociateRequest(r) {
 			sourceIP := socksClientIP(c.RemoteAddr())
 			s.addPendingUDPAssociation(sourceIP, assoc)
 			defer func() {
+				close(assoc.ch)
 				s.removePendingUDPAssociation(sourceIP, assoc)
 				if source := assoc.getSource(); source != "" {
 					srv.AssociatedUDP.Delete(source)
 				}
 			}()
 		} else {
-			assoc.setSource(caddr.String())
-			srv.AssociatedUDP.Set(assoc.getSource(), assoc, -1)
-			defer srv.AssociatedUDP.Delete(assoc.getSource())
+			source := caddr.String()
+			assoc.setSource(source)
+			srv.AssociatedUDP.Set(source, assoc, -1)
+			defer func() {
+				close(assoc.ch)
+				srv.AssociatedUDP.Delete(source)
+			}()
 		}
 		_, _ = io.Copy(io.Discard, c)
 		return nil
@@ -401,22 +405,14 @@ func (s *SOCKS5Server) UDPHandle(srv *socks5.Server, addr *net.UDPAddr, d *socks
 	src := addr.String()
 	var associatedClosed <-chan byte
 	if srv.LimitUDP {
-		any, ok := srv.AssociatedUDP.Get(src)
-		if !ok {
-			assoc, claimed := s.claimPendingUDPAssociation(addr)
-			if !claimed {
-				return fmt.Errorf("udp address %s is not associated with tcp", src)
-			}
-			assoc.setSource(src)
-			srv.AssociatedUDP.Set(src, assoc, -1)
-			associatedClosed = assoc.ch
-		} else {
-			assoc, ok := any.(*udpAssociation)
-			if !ok {
-				return fmt.Errorf("udp address %s has invalid association state", src)
-			}
-			associatedClosed = assoc.ch
+		assoc, ok, err := s.findUDPAssociation(srv, addr)
+		if err != nil {
+			return err
 		}
+		if !ok {
+			return fmt.Errorf("udp address %s is not associated with tcp", src)
+		}
+		associatedClosed = assoc.ch
 	}
 	send := func(ue *socks5.UDPExchange, data []byte) error {
 		select {
@@ -563,10 +559,31 @@ func (s *SOCKS5Server) removePendingUDPAssociation(sourceIP string, assoc *udpAs
 	s.pendingUDP[sourceIP] = pending
 }
 
-func (s *SOCKS5Server) claimPendingUDPAssociation(addr *net.UDPAddr) (*udpAssociation, bool) {
-	sourceIP := addr.IP.String()
+func (s *SOCKS5Server) findUDPAssociation(srv *socks5.Server, addr *net.UDPAddr) (*udpAssociation, bool, error) {
+	src := addr.String()
+	if cached, ok := srv.AssociatedUDP.Get(src); ok {
+		assoc, ok := cached.(*udpAssociation)
+		if !ok {
+			return nil, false, fmt.Errorf("udp address %s has invalid association state", src)
+		}
+		return assoc, true, nil
+	}
+
+	// Serialize the cache re-check, pending claim, and cache insertion. Without
+	// this, a second datagram can arrive after the first goroutine removes the
+	// pending association but before it publishes the claimed source address.
 	s.udpAssociationMutex.Lock()
 	defer s.udpAssociationMutex.Unlock()
+
+	if cached, ok := srv.AssociatedUDP.Get(src); ok {
+		assoc, ok := cached.(*udpAssociation)
+		if !ok {
+			return nil, false, fmt.Errorf("udp address %s has invalid association state", src)
+		}
+		return assoc, true, nil
+	}
+
+	sourceIP := addr.IP.String()
 	pending := s.pendingUDP[sourceIP]
 	for len(pending) > 0 {
 		assoc := pending[0]
@@ -580,9 +597,11 @@ func (s *SOCKS5Server) claimPendingUDPAssociation(addr *net.UDPAddr) (*udpAssoci
 			} else {
 				s.pendingUDP[sourceIP] = pending
 			}
-			return assoc, true
+			assoc.setSource(src)
+			srv.AssociatedUDP.Set(src, assoc, -1)
+			return assoc, true, nil
 		}
 	}
 	delete(s.pendingUDP, sourceIP)
-	return nil, false
+	return nil, false, nil
 }

@@ -28,39 +28,55 @@ func init() {
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
-			var wg sync.WaitGroup
+			raceCtx, raceCancel := context.WithTimeout(ctx, 2*time.Second)
+			defer raceCancel()
+
 			result := make(chan net.Conn, 1)
 			errChan := make(chan error, len(dnsServers))
+			var winner sync.Once
 
 			for _, ip := range dnsServers {
-				wg.Add(1)
 				go func(ip string) {
-					defer wg.Done()
-					conn, err := dialer.DialContext(ctx, "udp", ip)
-					if err == nil {
-						select {
-						case result <- conn:
-							cancel()
-						default:
-						}
-					} else {
+					conn, err := dialer.DialContext(raceCtx, "udp", ip)
+					if err != nil {
 						errChan <- err
+						return
+					}
+
+					won := false
+					winner.Do(func() {
+						won = true
+						result <- conn
+					})
+					if !won {
+						_ = conn.Close()
 					}
 				}(ip)
 			}
 
-			go func() {
-				wg.Wait()
-				close(result)
-				close(errChan)
-			}()
-
-			select {
-			case conn := <-result:
-				return conn, nil
-			case <-time.After(2 * time.Second):
-				return nil, net.ErrClosed
+			var lastErr error
+			for range dnsServers {
+				select {
+				case conn := <-result:
+					return conn, nil
+				case err := <-errChan:
+					lastErr = err
+				case <-raceCtx.Done():
+					select {
+					case conn := <-result:
+						return conn, nil
+					default:
+					}
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					if lastErr != nil {
+						return nil, lastErr
+					}
+					return nil, raceCtx.Err()
+				}
 			}
+			return nil, lastErr
 		},
 	}
 }

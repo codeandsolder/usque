@@ -289,6 +289,7 @@ var portFwCmd = &cobra.Command{
 		// One packet must be sent in order to listen for incoming packets
 		// a ping may suffice as well, but we will use a simple GET request
 		client := &http.Client{
+			Timeout: 15 * time.Second,
 			Transport: &http.Transport{
 				DialContext: tunNet.DialContext,
 			},

@@ -25,6 +25,10 @@ builds:
       - linux
     goarch:
       - amd64
+    goamd64:
+      - v1
+      - v2
+      - v3
     env:
       - CGO_ENABLED=0
     flags:
@@ -123,7 +127,7 @@ builds:
 archives:
   - formats:
     - zip
-    name_template: "usque_{{.Version}}_{{.Os}}_{{.Arch}}{{if .Arm}}v{{.Arm}}{{end}}"
+    name_template: "usque_{{.Version}}_{{.Os}}_{{.Arch}}{{if .Arm}}v{{.Arm}}{{end}}{{if and (eq .Arch \"amd64\") (ne .Amd64 \"v1\")}}_{{.Amd64}}{{end}}"
     files:
       - LICENSE.md
       - README.md
