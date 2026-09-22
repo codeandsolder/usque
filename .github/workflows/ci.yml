@@ -32,6 +32,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Verify maintenance detector syntax
+        run: python3 -m py_compile .github/scripts/maintenance_detector.py
+
       - name: Verify modules
         run: go mod verify
 
