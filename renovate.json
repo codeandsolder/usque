@@ -17,7 +17,7 @@
   ],
   "packageRules": [
     {
-      "description": "Always track the current stable Go toolchain",
+      "description": "Use the age-gated custom manager for the Go directive",
       "matchManagers": [
         "gomod"
       ],
@@ -27,7 +27,7 @@
       "matchDepTypes": [
         "golang"
       ],
-      "rangeStrategy": "bump"
+      "enabled": false
     },
     {
       "description": "Keep indirect Go modules current",
@@ -74,6 +74,18 @@
     }
   ],
   "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)go\\.mod$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)go\\s+(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)"
+      ],
+      "depNameTemplate": "go",
+      "datasourceTemplate": "golang-version",
+      "versioningTemplate": "semver"
+    },
     {
       "customType": "regex",
       "managerFilePatterns": [
