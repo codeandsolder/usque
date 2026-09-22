@@ -18,16 +18,16 @@ permissions:
 jobs:
   lint-and-test:
     name: Lint and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       CGO_ENABLED: "0"
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: true
@@ -45,7 +45,7 @@ jobs:
         run: go test ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: v2.11.4
+          version: v2.13.2
           args: --timeout=5m
