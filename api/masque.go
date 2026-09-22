@@ -16,7 +16,6 @@ import (
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/yosida95/uritemplate/v3"
-	"golang.org/x/net/http2"
 )
 
 // PrepareTlsConfig creates a TLS configuration using the provided certificate and SNI (Server Name Indication).
@@ -251,8 +250,12 @@ func newHTTP2ClientWithDialer(baseTLSConfig *tls.Config, endpoint *net.TCPAddr, 
 	}
 
 	if proxyURL == nil {
-		transport := &http2.Transport{
-			DialTLSContext: func(ctx context.Context, network, _ string, _ *tls.Config) (net.Conn, error) {
+		protocols := new(http.Protocols)
+		protocols.SetHTTP2(true)
+		transport := &http.Transport{
+			Protocols:          protocols,
+			DisableCompression: true,
+			DialTLSContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
 				conn, err := dialer.DialContext(ctx, network, endpoint.String())
 				if err != nil {
 					return nil, err
