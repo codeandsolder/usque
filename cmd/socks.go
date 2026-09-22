@@ -235,6 +235,26 @@ var socksCmd = &cobra.Command{
 			return
 		}
 
+		sourceIP, err := cmd.Flags().GetString("source-ip")
+		if err != nil {
+			cmd.Printf("Failed to get source-ip flag: %v\n", err)
+			return
+		}
+
+		var localAddr *net.UDPAddr
+		if sourceIP != "" {
+			ip := net.ParseIP(sourceIP)
+			if ip == nil {
+				cmd.Printf("Invalid --source-ip address: %q\n", sourceIP)
+				return
+			}
+			if ip.To4() != nil {
+				ip = ip.To4()
+			}
+			localAddr = &net.UDPAddr{IP: ip, Port: 0}
+			log.Printf("Pinning MASQUE source to %s", ip)
+		}
+
 		hookEnv := map[string]string{
 			"USQUE_MODE": "socks",
 			"USQUE_IPV4": config.AppConfig.IPv4,
@@ -258,6 +278,7 @@ var socksCmd = &cobra.Command{
 			ReconnectDelay:    reconnectDelay,
 			AlwaysReconnect:   alwaysReconnect,
 			UseHTTP2:          useHTTP2,
+			LocalAddr:         localAddr,
 			OnConnect:         onConnect,
 			OnDisconnect:      onDisconnect,
 			HookEnv:           hookEnv,
@@ -318,5 +339,6 @@ func init() {
 	socksCmd.Flags().Bool("system-dns", false, "With -l, resolve names via the OS (e.g. /etc/resolv.conf) instead of -d")
 	socksCmd.Flags().String("on-connect", "", "Path to an executable to run after each successful tunnel connect (no args; context via USQUE_* env vars)")
 	socksCmd.Flags().String("on-disconnect", "", "Path to an executable to run after each tunnel disconnect (no args; context via USQUE_* env vars)")
+	socksCmd.Flags().String("source-ip", "", "Pin the MASQUE outbound socket source IP (e.g. a /128 secondary). Empty = let the kernel pick.")
 	rootCmd.AddCommand(socksCmd)
 }

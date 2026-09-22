@@ -106,7 +106,7 @@ func PrepareTlsConfig(privKey *ecdsa.PrivateKey, peerPubKey *ecdsa.PublicKey, ce
 //   - *connectip.Conn: The Connect-IP connection instance.
 //   - *http.Response: The response from the Connect-IP handshake.
 //   - error: An error if the connection setup fails.
-func ConnectTunnel(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.Config, connectUri string, endpoint net.Addr, useHTTP2 bool) (*net.UDPConn, *http3.Transport, *connectip.Conn, *http.Response, error) {
+func ConnectTunnel(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.Config, connectUri string, endpoint net.Addr, useHTTP2 bool, localAddr *net.UDPAddr) (*net.UDPConn, *http3.Transport, *connectip.Conn, *http.Response, error) {
 	template := uritemplate.MustNew(connectUri)
 	additionalHeaders := http.Header{
 		"User-Agent": []string{""},
@@ -123,7 +123,11 @@ func ConnectTunnel(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.
 		// TODO: support PQC
 		h2Headers.Set("pq-enabled", "false")
 
-		h2Client, err := newHTTP2Client(tlsConfig, h2Endpoint, connectUri)
+		h2Dialer := &net.Dialer{}
+		if localAddr != nil {
+			h2Dialer.LocalAddr = &net.TCPAddr{IP: localAddr.IP, Port: 0}
+		}
+		h2Client, err := newHTTP2ClientWithDialer(tlsConfig, h2Endpoint, connectUri, h2Dialer)
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("failed to create HTTP/2 client: %w", err)
 		}
@@ -145,7 +149,7 @@ func ConnectTunnel(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		udpConn, tr, ipConn, rsp, err := connectTunnelHTTP3(ctx, tlsConfig, quicConfig, template, additionalHeaders, quicEndpoint)
+		udpConn, tr, ipConn, rsp, err := connectTunnelHTTP3(ctx, tlsConfig, quicConfig, template, additionalHeaders, quicEndpoint, localAddr)
 		if err == nil {
 			return udpConn, tr, ipConn, rsp, nil
 		}
@@ -160,10 +164,12 @@ func ConnectTunnel(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.
 	return nil, nil, nil, nil, fmt.Errorf("failed to dial connect-ip: %w", lastErr)
 }
 
-func connectTunnelHTTP3(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.Config, template *uritemplate.Template, additionalHeaders http.Header, endpoint *net.UDPAddr) (*net.UDPConn, *http3.Transport, *connectip.Conn, *http.Response, error) {
+func connectTunnelHTTP3(ctx context.Context, tlsConfig *tls.Config, quicConfig *quic.Config, template *uritemplate.Template, additionalHeaders http.Header, endpoint *net.UDPAddr, localAddr *net.UDPAddr) (*net.UDPConn, *http3.Transport, *connectip.Conn, *http.Response, error) {
 	var udpConn *net.UDPConn
 	var err error
-	if endpoint.IP.To4() == nil {
+	if localAddr != nil {
+		udpConn, err = net.ListenUDP("udp", localAddr)
+	} else if endpoint.IP.To4() == nil {
 		udpConn, err = net.ListenUDP("udp", &net.UDPAddr{
 			IP:   net.IPv6zero,
 			Port: 0,
@@ -220,9 +226,11 @@ func isRetryableHTTP3ConnectFailure(err error) bool {
 		strings.Contains(msg, "PROTOCOL_VIOLATION")
 }
 
-// newHTTP2Client builds an HTTP client for CONNECT-IP over HTTP/2.
-// It honors proxy environment variables and pins dialing to the selected endpoint.
-func newHTTP2Client(baseTLSConfig *tls.Config, endpoint *net.TCPAddr, connectURI string) (*http.Client, error) {
+// newHTTP2ClientWithDialer builds an HTTP client for CONNECT-IP over HTTP/2.
+// It honors proxy environment variables, pins dialing to the selected endpoint,
+// and allows the caller to supply a custom *net.Dialer (e.g. with LocalAddr
+// set for source-IP binding).
+func newHTTP2ClientWithDialer(baseTLSConfig *tls.Config, endpoint *net.TCPAddr, connectURI string, customDialer *net.Dialer) (*http.Client, error) {
 	if endpoint == nil {
 		return nil, errors.New("missing HTTP/2 endpoint")
 	}
@@ -237,10 +245,14 @@ func newHTTP2Client(baseTLSConfig *tls.Config, endpoint *net.TCPAddr, connectURI
 	tlsConfig := baseTLSConfig.Clone()
 	tlsConfig.NextProtos = []string{"h2"}
 
+	dialer := customDialer
+	if dialer == nil {
+		dialer = &net.Dialer{}
+	}
+
 	if proxyURL == nil {
 		transport := &http2.Transport{
 			DialTLSContext: func(ctx context.Context, network, _ string, _ *tls.Config) (net.Conn, error) {
-				dialer := &net.Dialer{}
 				conn, err := dialer.DialContext(ctx, network, endpoint.String())
 				if err != nil {
 					return nil, err
@@ -260,7 +272,6 @@ func newHTTP2Client(baseTLSConfig *tls.Config, endpoint *net.TCPAddr, connectURI
 
 	originAuthority := authorityWithDefaultPort(parsedURI, "443")
 	proxyAuthority := authorityWithDefaultPort(proxyURL, proxyDefaultPort(proxyURL))
-	dialer := &net.Dialer{}
 	transport := &http.Transport{
 		Proxy:              http.ProxyFromEnvironment,
 		ForceAttemptHTTP2:  true,
