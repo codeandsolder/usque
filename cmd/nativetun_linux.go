@@ -11,26 +11,49 @@ import (
 	"github.com/Diniboy1123/usque/config"
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
+	wgtun "golang.zx2c4.com/wireguard/tun"
 )
 
 var longDescription = "Expose Warp as a native TUN device that accepts any IP traffic." +
 	" Requires root, tun.ko, and iproute2."
 
 func (t *tunDevice) create() (api.TunnelDevice, error) {
-	platformSpecificParams := water.PlatformSpecificParams{
-		Name:    t.name,
-		Persist: t.persist,
+	var (
+		dev        api.TunnelDevice
+		deviceName string
+	)
+
+	if t.persist {
+		// water is retained for persistent interfaces. wireguard-go's Linux
+		// TUN backend is used for the normal ephemeral path because it enables
+		// IFF_VNET_HDR and exposes batched GSO/GRO packet I/O.
+		platformSpecificParams := water.PlatformSpecificParams{
+			Name:    t.name,
+			Persist: true,
+		}
+		waterDev, err := water.New(water.Config{DeviceType: water.TUN, PlatformSpecificParams: platformSpecificParams})
+		if err != nil {
+			return nil, err
+		}
+		deviceName = waterDev.Name()
+		dev = api.NewWaterAdapter(waterDev)
+	} else {
+		wgDev, err := wgtun.CreateTUN(t.name, t.mtu)
+		if err != nil {
+			return nil, err
+		}
+		deviceName, err = wgDev.Name()
+		if err != nil {
+			_ = wgDev.Close()
+			return nil, fmt.Errorf("failed to get TUN name: %v", err)
+		}
+		dev = api.NewBatchTunAdapter(wgDev)
 	}
 
-	dev, err := water.New(water.Config{DeviceType: water.TUN, PlatformSpecificParams: platformSpecificParams})
-	if err != nil {
-		return nil, err
-	}
-
-	t.name = dev.Name()
+	t.name = deviceName
 
 	if t.iproute2 {
-		link, err := netlink.LinkByName(dev.Name())
+		link, err := netlink.LinkByName(deviceName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get link: %v", err)
 		}
@@ -66,5 +89,5 @@ func (t *tunDevice) create() (api.TunnelDevice, error) {
 		log.Printf("IPv6: %s", config.AppConfig.IPv6)
 	}
 
-	return api.NewWaterAdapter(dev), nil
+	return dev, nil
 }
