@@ -34,6 +34,7 @@ jobs:
           WINTUN_SHA256: "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51"
         run: |
           set -euo pipefail
+          printf '/wintun/\n' >> .git/info/exclude
           archive="${RUNNER_TEMP}/wintun-${WINTUN_VERSION}.zip"
           curl --fail --silent --show-error --location \
             --proto '=https' --proto-redir '=https' \
