@@ -71,6 +71,33 @@ func TestNegativeResponseTTLUsesSOAMinimum(t *testing.T) {
 	}
 }
 
+func TestNegativeResponseTTLHonorsExplicitZero(t *testing.T) {
+	msg := dns.NewMsg("missing.example", dns.TypeA)
+	soa := &dns.SOA{Hdr: dns.Header{Name: "example.", TTL: 120}}
+	soa.Minttl = 0
+	msg.Ns = []dns.RR{soa}
+	if got := negativeResponseTTL(msg, 30*time.Second); got != 0 {
+		t.Fatalf("negativeResponseTTL = %v, want 0", got)
+	}
+}
+
+func TestValidateUpstreamResponse(t *testing.T) {
+	for _, rcode := range []uint16{dns.RcodeSuccess, dns.RcodeNameError} {
+		msg := new(dns.Msg)
+		msg.Rcode = rcode
+		if err := validateUpstreamResponse(msg); err != nil {
+			t.Fatalf("rcode %d unexpectedly rejected: %v", rcode, err)
+		}
+	}
+	for _, rcode := range []uint16{dns.RcodeServerFailure, dns.RcodeRefused, dns.RcodeFormatError} {
+		msg := new(dns.Msg)
+		msg.Rcode = rcode
+		if err := validateUpstreamResponse(msg); err == nil {
+			t.Fatalf("rcode %d unexpectedly accepted", rcode)
+		}
+	}
+}
+
 func TestCacheRoundRobinsAndExpires(t *testing.T) {
 	msg := dns.NewMsg("example.com", dns.TypeA)
 	a1 := &dns.A{Hdr: dns.Header{Name: "example.com.", TTL: 60}}

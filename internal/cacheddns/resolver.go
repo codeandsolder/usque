@@ -236,12 +236,8 @@ func (r *Resolver) query(ctx context.Context, name string, qtype uint16) (*dns.M
 			lastErr = res.err
 			continue
 		}
-		if res.msg == nil {
-			lastErr = fmt.Errorf("empty DNS response")
-			continue
-		}
-		if res.msg.Rcode == dns.RcodeServerFailure {
-			lastErr = fmt.Errorf("DNS upstream returned SERVFAIL")
+		if err := validateUpstreamResponse(res.msg); err != nil {
+			lastErr = err
 			continue
 		}
 		cancel()
@@ -251,6 +247,21 @@ func (r *Resolver) query(ctx context.Context, name string, qtype uint16) (*dns.M
 		lastErr = fmt.Errorf("all DNS upstreams failed")
 	}
 	return nil, lastErr
+}
+
+// validateUpstreamResponse accepts only DNS answers that are meaningful to the
+// caller. When upstreams are raced, transient/policy failures such as SERVFAIL
+// or REFUSED must not beat a slower usable response.
+func validateUpstreamResponse(msg *dns.Msg) error {
+	if msg == nil {
+		return fmt.Errorf("empty DNS response")
+	}
+	switch msg.Rcode {
+	case dns.RcodeSuccess, dns.RcodeNameError:
+		return nil
+	default:
+		return fmt.Errorf("DNS upstream returned %s", rcodeString(msg.Rcode))
+	}
 }
 
 func selectIP(msg *dns.Msg, qtype uint16, n uint64) net.IP {
@@ -312,9 +323,7 @@ func negativeResponseTTL(msg *dns.Msg, fallback time.Duration) time.Duration {
 			if soa.Minttl < ttl {
 				ttl = soa.Minttl
 			}
-			if ttl > 0 {
-				return time.Duration(ttl) * time.Second
-			}
+			return time.Duration(ttl) * time.Second
 		}
 	}
 	return fallback

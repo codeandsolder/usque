@@ -110,8 +110,7 @@ func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, transport *http
 		req.URL.Host = req.Host
 	}
 	req.Header = r.Header.Clone()
-	req.Header.Del("Proxy-Authorization")
-	req.Header.Del("Proxy-Connection")
+	stripHopByHopHeaders(req.Header)
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
@@ -121,6 +120,7 @@ func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, transport *http
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	stripHopByHopHeaders(resp.Header)
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)

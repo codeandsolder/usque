@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/Diniboy1123/usque/api"
@@ -402,10 +403,7 @@ func handleHTTPProxy(w http.ResponseWriter, r *http.Request, client *http.Client
 		return
 	}
 	req.Header = r.Header.Clone()
-	// Proxy credentials and connection-specific proxy headers are hop-by-hop and
-	// must never be forwarded to the origin server.
-	req.Header.Del("Proxy-Authorization")
-	req.Header.Del("Proxy-Connection")
+	stripHopByHopHeaders(req.Header)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -414,6 +412,7 @@ func handleHTTPProxy(w http.ResponseWriter, r *http.Request, client *http.Client
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	stripHopByHopHeaders(resp.Header)
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
@@ -425,6 +424,32 @@ func copyHeader(dst, src http.Header) {
 		for _, v := range vv {
 			dst.Add(k, v)
 		}
+	}
+}
+
+// stripHopByHopHeaders removes headers scoped to a single HTTP connection.
+// Connection can nominate additional hop-by-hop fields, so process its values
+// before removing the standard set.
+func stripHopByHopHeaders(header http.Header) {
+	for _, value := range header.Values("Connection") {
+		for _, name := range strings.Split(value, ",") {
+			if name = strings.TrimSpace(name); name != "" {
+				header.Del(name)
+			}
+		}
+	}
+	for _, name := range []string{
+		"Connection",
+		"Proxy-Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+	} {
+		header.Del(name)
 	}
 }
 
