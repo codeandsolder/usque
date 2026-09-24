@@ -33,3 +33,5 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 )
+
+replace github.com/Diniboy1123/connect-ip-go => ./third_party/connect-ip-go
