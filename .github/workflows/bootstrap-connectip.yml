@@ -1,0 +1,121 @@
+name: Bootstrap connect-ip-go compatibility
+
+on:
+  push:
+    branches:
+      - renovate/github.com-quic-go-quic-go-0.x
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: renovate/github.com-quic-go-quic-go-0.x
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Materialize pinned Cloudflare fork and migrate capsule API
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf third_party/connect-ip-go /tmp/connect-ip-go
+          git clone --quiet https://github.com/Diniboy1123/connect-ip-go.git /tmp/connect-ip-go
+          git -C /tmp/connect-ip-go checkout --quiet --detach 66cba32d7d33e0fb3ba9d1cdaac664379271a54b
+          mkdir -p third_party/connect-ip-go
+          cp /tmp/connect-ip-go/*.go third_party/connect-ip-go/
+          cp /tmp/connect-ip-go/LICENSE /tmp/connect-ip-go/README.md /tmp/connect-ip-go/go.mod /tmp/connect-ip-go/go.sum third_party/connect-ip-go/
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          conn = Path("third_party/connect-ip-go/conn.go")
+          text = conn.read_text()
+          old = """\tdefer c.str.Close()
+          \tr := quicvarint.NewReader(c.str)
+          \tfor {
+          \t\tt, cr, err := http3.ParseCapsule(r)"""
+          new = """\tdefer c.str.Close()
+          \tp := http3.NewCapsuleParser(c.str)
+          \tfor {
+          \t\tt, cr, err := p.Next()"""
+          if old not in text:
+              raise SystemExit("expected ParseCapsule call site not found")
+          conn.write_text(text.replace(old, new, 1))
+
+          nested = Path("third_party/connect-ip-go/go.mod")
+          text = nested.read_text()
+          old_dep = "github.com/quic-go/quic-go v0.59.0"
+          if old_dep not in text:
+              raise SystemExit("expected nested quic-go version not found")
+          nested.write_text(text.replace(old_dep, "github.com/quic-go/quic-go v0.62.0", 1))
+
+          root = Path("go.mod")
+          text = root.read_text().rstrip() + "\n"
+          replacement = "replace github.com/Diniboy1123/connect-ip-go => ./third_party/connect-ip-go"
+          if replacement not in text:
+              text += "\n" + replacement + "\n"
+          root.write_text(text)
+
+          Path("third_party/connect-ip-go/PATCHES.md").write_text("""# connect-ip-go compatibility snapshot
+
+          This directory is a source snapshot of `Diniboy1123/connect-ip-go` at commit `66cba32d7d33`, retained because usque relies on that fork's Cloudflare WARP-specific HTTP/2 and non-RFC behavior.
+
+          The local replacement carries the minimal quic-go v0.61+ compatibility migration: `readFromStream` uses the stateful `http3.CapsuleParser` API instead of the removed `http3.ParseCapsule` helper.
+
+          The root module keeps the upstream pseudo-version in `require` as provenance. Remove this replacement when the Cloudflare-specific fork itself supports the selected quic-go version without local patches.
+          """)
+          PY
+
+          (
+            cd third_party/connect-ip-go
+            go mod tidy
+            go mod verify
+            go vet ./...
+            go test ./...
+          )
+          go mod tidy
+          go mod verify
+          go build -trimpath ./...
+          go vet ./...
+          go test ./...
+
+      - name: Add compatibility-module CI coverage
+        shell: python3 {0}
+        run: |
+          from pathlib import Path
+          p = Path(".github/workflows/ci.yml")
+          text = p.read_text()
+          marker = """      - name: Build
+                  run: go build -trimpath ./...
+          """
+          addition = marker + """
+                - name: Verify connect-ip compatibility module
+                  working-directory: third_party/connect-ip-go
+                  run: |
+                    go mod verify
+                    go vet ./...
+                    go test ./...
+          """
+          if "Verify connect-ip compatibility module" not in text:
+              if marker not in text:
+                  raise SystemExit("CI build marker not found")
+              text = text.replace(marker, addition, 1)
+              p.write_text(text)
+
+      - name: Commit durable migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/bootstrap-connectip.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add go.mod go.sum .github/workflows/ci.yml third_party/connect-ip-go .github/workflows/bootstrap-connectip.yml
+          git commit -m "fix: adapt connect-ip-go to quic-go capsule parser"
+          git push origin HEAD:renovate/github.com-quic-go-quic-go-0.x
