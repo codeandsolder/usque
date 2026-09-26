@@ -5,7 +5,7 @@ go 1.24
 require (
 	github.com/dunglas/httpsfv v1.1.2
 	github.com/quic-go/quic-go v0.63.0
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.12.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/net v0.43.0
 )
