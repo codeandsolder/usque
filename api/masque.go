@@ -217,12 +217,9 @@ func connectTunnelHTTP3(ctx context.Context, tlsConfig *tls.Config, quicConfig *
 }
 
 func isRetryableHTTP3ConnectFailure(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "failed to read response") &&
-		strings.Contains(msg, "PROTOCOL_VIOLATION")
+	var transportErr *quic.TransportError
+	return errors.As(err, &transportErr) &&
+		transportErr.ErrorCode == quic.ProtocolViolation
 }
 
 // newHTTP2ClientWithDialer builds an HTTP client for CONNECT-IP over HTTP/2.
