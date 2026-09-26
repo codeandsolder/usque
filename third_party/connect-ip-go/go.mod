@@ -7,7 +7,7 @@ require (
 	github.com/quic-go/quic-go v0.63.0
 	github.com/stretchr/testify v1.11.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
-	golang.org/x/net v0.43.0
+	golang.org/x/net v0.59.0
 )
 
 require (
