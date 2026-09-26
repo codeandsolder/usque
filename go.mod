@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	codeberg.org/miekg/dns v0.6.115
 	github.com/Diniboy1123/connect-ip-go v0.0.0-20260613064811-66cba32d7d33
-	github.com/quic-go/quic-go v0.62.0
+	github.com/quic-go/quic-go v0.63.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/spf13/cobra v1.10.2
 	github.com/txthinking/runnergroup v0.0.0-20250224021307-5864ffeb65ae
