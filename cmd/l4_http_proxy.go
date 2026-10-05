@@ -30,6 +30,9 @@ var l4HTTPProxyCmd = &cobra.Command{
 			authHeader = "Basic " + internal.LoginToBase64(opts.username, opts.password)
 		}
 
+		transport := newL4HTTPTransport(proxy)
+		defer transport.CloseIdleConnections()
+
 		server := &http.Server{
 			Addr: net.JoinHostPort(opts.bind, opts.port),
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +45,7 @@ var l4HTTPProxyCmd = &cobra.Command{
 					handleL4HTTPConnect(w, r, proxy)
 					return
 				}
-				handleL4HTTPForward(w, r, proxy)
+				handleL4HTTPForward(w, r, transport)
 			}),
 		}
 
@@ -87,8 +90,8 @@ func handleL4HTTPConnect(w http.ResponseWriter, r *http.Request, proxy *api.L4Pr
 	api.RelayTCP(clientConn, destConn)
 }
 
-func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, proxy *api.L4Proxy) {
-	transport := &http.Transport{
+func newL4HTTPTransport(proxy *api.L4Proxy) *http.Transport {
+	return &http.Transport{
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if network != "tcp" && network != "tcp4" && network != "tcp6" {
@@ -97,8 +100,9 @@ func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, proxy *api.L4Pr
 			return proxy.DialContext(ctx, addr)
 		},
 	}
-	defer transport.CloseIdleConnections()
+}
 
+func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, transport *http.Transport) {
 	req := r.Clone(r.Context())
 	req.RequestURI = ""
 	req.URL.Scheme = normalizedScheme(req.URL.Scheme)
@@ -106,8 +110,7 @@ func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, proxy *api.L4Pr
 		req.URL.Host = req.Host
 	}
 	req.Header = r.Header.Clone()
-	req.Header.Del("Proxy-Authorization")
-	req.Header.Del("Proxy-Connection")
+	stripHopByHopHeaders(req.Header)
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
@@ -117,6 +120,7 @@ func handleL4HTTPForward(w http.ResponseWriter, r *http.Request, proxy *api.L4Pr
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	stripHopByHopHeaders(resp.Header)
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
