@@ -1,6 +1,6 @@
 module github.com/Diniboy1123/usque
 
-go 1.27.2
+go 1.27.3
 
 require (
 	codeberg.org/miekg/dns v0.6.118
