@@ -25,7 +25,7 @@ require (
 	github.com/spf13/pflag v1.1.0 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.uber.org/mock v0.6.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
