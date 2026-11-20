@@ -10,7 +10,7 @@
   ],
   "packageRules": [
     {
-      "description": "Use the age-gated custom manager for the Go directive",
+      "description": "Use the custom manager for the Go directive",
       "matchManagers": [
         "gomod"
       ],
