@@ -26,7 +26,7 @@ require (
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
-	golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 // indirect
+	golang.org/x/exp v0.0.0-20261119141654-b15d094f3610 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
