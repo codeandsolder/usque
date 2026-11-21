@@ -3,7 +3,7 @@ module github.com/Diniboy1123/usque
 go 1.27.4
 
 require (
-	codeberg.org/miekg/dns v0.6.133
+	codeberg.org/miekg/dns v0.6.139
 	github.com/Diniboy1123/connect-ip-go v0.0.0-20260613064811-66cba32d7d33
 	github.com/quic-go/quic-go v0.65.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
@@ -27,7 +27,7 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20261120182113-8801fbdfac81 // indirect
-	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
