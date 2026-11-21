@@ -13,7 +13,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.zx2c4.com/wireguard v0.0.0-20261024220952-b3bc704ef0ee
-	gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb
+	gvisor.dev/gvisor v0.0.0-20261121110941-eb263e1f414d
 )
 
 require (
