@@ -31,6 +31,16 @@
         "indirect"
       ],
       "enabled": true
+    },
+    {
+      "description": "gVisor publishes its usable Go module on the generated go branch; the maintenance queue tracks that branch instead of Renovate's default-branch digest",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "gvisor.dev/gvisor"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [
