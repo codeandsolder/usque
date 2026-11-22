@@ -98,5 +98,5 @@ golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2/go.mod h1:deeaetjYA+D
 golang.zx2c4.com/wireguard v0.0.0-20261024220952-b3bc704ef0ee h1:hByBPN/P/BVzJ591rJfvNhdoL94vmBtRbnVw77QJL20=
 golang.zx2c4.com/wireguard v0.0.0-20261024220952-b3bc704ef0ee/go.mod h1:rpwXGsirqLqN2L0JDJQlwOboGHmptD5ZD6T2VmcqhTw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
-gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb h1:TJ8BuwC+RUuKZgRETtxPjRk8e2Kj3kH08I73AKIdOFY=
-gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb/go.mod h1:8aLQqUBHDH8fY5y60lzmwDpMMbQCcT3EBfoSwhfaGCY=
+gvisor.dev/gvisor v0.0.0-20261121111754-3eadbee70834 h1:sVpIuX8yDP6pLXaYj4RNzfvqx9DBbE69Vi1v7AtuQMc=
+gvisor.dev/gvisor v0.0.0-20261121111754-3eadbee70834/go.mod h1:AGCFHJ8yer01MsPbOE1JJtEOoLx79kr4ranU2wAm67k=
